@@ -1,0 +1,31 @@
+services:
+  vigilante:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vigilante-core:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////data/vigilante.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - vigilante-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live')"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  vigilante-data:
