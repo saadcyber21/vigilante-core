@@ -154,3 +154,23 @@ curl https://your-hostname.example/api/v1/health/live
 
 Review host disk usage, Docker volume usage, reverse-proxy certificate renewal,
 and backup freshness regularly.
+
+
+## GitHub Pages console
+
+The static analyst console lives in `docs/` and is deployed by `.github/workflows/pages.yml`. The workflow publishes the UI from the `main` branch when dashboard files or the Pages workflow change. Once the Pages deployment finishes, the project site is available at:
+
+```text
+https://saadcyber21.github.io/vigilante-core/
+```
+
+Pages hosts only HTML, CSS, and JavaScript. It does not host the FastAPI service, database, webhook receiver, or persistent case storage. The console opens with clearly marked synthetic examples and does not contact a backend unless an analyst chooses **Connect API**.
+
+To connect the hosted console to a self-hosted API:
+
+1. Deploy the API separately using the Docker Compose instructions above and configure HTTPS.
+2. Set `CORS_ORIGINS=https://saadcyber21.github.io` on the API host, then restart the service. CORS uses the origin only; do not include `/vigilante-core/` in the origin value.
+3. Open the Pages console and choose **Connect API**. Enter the HTTPS base URL and an existing analyst account.
+4. Keep API credentials, JWT secrets, and webhook secrets out of `docs/`, Git history, and GitHub Pages settings. The console keeps its short-lived access token in memory only.
+
+For local development, the FastAPI app serves the same dashboard at `/` and its assets at `/static/`. The Pages deployment is independent from the API’s database and operational backups.

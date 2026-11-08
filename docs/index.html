@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a1019">
+  <meta name="description" content="Vigilante is an open-source security operations console for alert triage and case management.">
+  <meta name="referrer" content="no-referrer">
+  <title>Vigilante — Security Operations</title>
+  <link rel="stylesheet" href="./static/styles.css">
+  <script src="./static/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="Vigilante home" data-page-link="overview">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 2.5 27 6.8v8.7c0 7.1-4.6 11.8-11 14-6.4-2.2-11-6.9-11-14V6.8L16 2.5Z"/><path d="m10.5 16.1 3.6 3.6 7.7-8"/></svg></span>
+        <span class="brand-copy"><strong>VIGILANTE</strong><small>COMMUNITY SOC</small></span>
+      </a>
+
+      <div class="workspace-switcher">
+        <span class="workspace-icon">N</span>
+        <span class="workspace-copy"><small>WORKSPACE</small><strong>Northstar Labs</strong></span>
+        <span class="chevron" aria-hidden="true">⌄</span>
+      </div>
+
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <p class="nav-label">WORKSPACE</p>
+        <button class="nav-item active" data-view="overview"><span class="nav-icon" aria-hidden="true">◫</span><span>Overview</span></button>
+        <button class="nav-item" data-view="alerts"><span class="nav-icon" aria-hidden="true">⌁</span><span>Alert queue</span><span class="nav-count" id="navAlertCount">0</span></button>
+        <button class="nav-item" data-view="cases"><span class="nav-icon" aria-hidden="true">▣</span><span>Cases</span><span class="nav-count" id="navCaseCount">0</span></button>
+        <p class="nav-label nav-label-spaced">OPERATE</p>
+        <button class="nav-item" data-view="integrations"><span class="nav-icon" aria-hidden="true">⌘</span><span>Integrations</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="system-status"><span class="status-dot"></span><span><strong>Workspace ready</strong><small id="sidebarMode">Demo environment</small></span></div>
+        <a class="repo-link" href="https://github.com/saadcyber21/vigilante-core" target="_blank" rel="noreferrer">Open-source project <span aria-hidden="true">↗</span></a>
+        <div class="profile-row"><span class="avatar">VA</span><span><strong>Vigilante Analyst</strong><small>Community workspace</small></span><span class="more">•••</span></div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation" aria-expanded="false">☰</button>
+        <div class="breadcrumbs"><span>Workspace</span><span class="crumb-slash">/</span><strong id="currentPageName">Overview</strong></div>
+        <div class="topbar-actions">
+          <span class="mode-pill" id="modePill"><span class="status-dot"></span><span id="modeLabel">DEMO MODE</span></span>
+          <button class="button button-primary button-small" id="connectButton">Connect API</button>
+          <button class="icon-button notification-button" aria-label="Notifications"><span aria-hidden="true">♧</span><i></i></button>
+          <span class="avatar avatar-top" aria-label="Vigilante Analyst">VA</span>
+        </div>
+      </header>
+
+      <div class="demo-banner" id="demoBanner" role="status">
+        <span class="banner-symbol" aria-hidden="true">i</span>
+        <span><strong>DEMO DATA</strong> — synthetic events for evaluation only. No live telemetry is connected; actions stay in this browser.</span>
+        <button class="banner-dismiss" id="dismissBanner" aria-label="Dismiss demo notice">×</button>
+      </div>
+      <div class="notice-banner" id="liveNotice" hidden role="status">
+        <span class="banner-symbol banner-symbol-live" aria-hidden="true">✓</span>
+        <span><strong>LIVE API CONNECTED</strong> — values below are returned by the configured Vigilante API. This interface does not ingest telemetry itself.</span>
+      </div>
+
+      <section class="view" id="view-overview" data-view-panel="overview">
+        <div class="page-heading">
+          <div><div class="eyebrow">SECURITY OPERATIONS CENTER <span class="eyebrow-line"></span></div><h1>Command center</h1><p class="page-subtitle">A clear view of what needs your team’s attention.</p></div>
+          <div class="heading-meta"><span class="date-chip"><span aria-hidden="true">◷</span><span id="currentDate">Today</span></span><span class="refresh-label"><span class="refresh-dot"></span> Refresh manually</span></div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card"><div class="metric-top"><span class="metric-name">Total alerts</span><span class="metric-icon metric-icon-blue">⌁</span></div><div class="metric-value" id="metricAlerts">0</div><div class="metric-foot"><span class="metric-foot-muted" id="metricAlertsNote">In this workspace</span></div></article>
+          <article class="metric-card"><div class="metric-top"><span class="metric-name">High priority</span><span class="metric-icon metric-icon-orange">△</span></div><div class="metric-value" id="metricHigh">0</div><div class="metric-foot"><span class="metric-foot-muted">High and critical severity</span></div></article>
+          <article class="metric-card"><div class="metric-top"><span class="metric-name">Open cases</span><span class="metric-icon metric-icon-purple">▣</span></div><div class="metric-value" id="metricCases">0</div><div class="metric-foot"><span class="metric-foot-muted">Awaiting analyst action</span></div></article>
+          <article class="metric-card"><div class="metric-top"><span class="metric-name">Critical alerts</span><span class="metric-icon metric-icon-red">!</span></div><div class="metric-value" id="metricCritical">0</div><div class="metric-foot"><span class="severity-inline"><span class="severity-dot critical-dot"></span><span id="criticalSubtext">Review the alert queue</span></span></div></article>
+        </div>
+
+        <div class="overview-grid">
+          <article class="panel trend-panel">
+            <div class="panel-heading"><div><h2>Signal activity</h2><p>Illustrative 24-hour volume</p></div><span class="mini-badge" id="trendBadge">SYNTHETIC</span></div>
+            <div class="chart-summary"><strong>Event volume</strong><span><i class="legend-dot"></i> Alerts</span></div>
+            <div class="chart-wrap" id="trendChart" aria-label="Illustrative event volume chart"></div>
+            <div class="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>Now</span></div>
+            <p class="chart-footnote" id="chartFootnote">Sample trend only — historical aggregation is not provided by the demo.</p>
+          </article>
+          <article class="panel priority-panel">
+            <div class="panel-heading"><div><h2>Severity breakdown</h2><p>Current alert queue</p></div><button class="text-button" data-go="alerts">View queue <span aria-hidden="true">→</span></button></div>
+            <div class="severity-list" id="severityBreakdown"></div>
+            <div class="priority-footer"><span class="small-muted">Based on available alerts</span><span class="priority-total" id="severityTotal">0 events</span></div>
+          </article>
+        </div>
+
+        <section class="panel table-panel">
+          <div class="panel-heading table-heading"><div><h2>Priority alert queue</h2><p>Recent events that may need an analyst</p></div><button class="button button-quiet button-small" data-go="alerts">View all alerts <span aria-hidden="true">→</span></button></div>
+          <div class="table-scroll"><table><thead><tr><th>ALERT</th><th>SOURCE</th><th>SEVERITY</th><th>STATUS</th><th>RECEIVED</th><th></th></tr></thead><tbody id="overviewAlertsBody"></tbody></table></div>
+          <div class="empty-state" id="overviewEmpty" hidden><span class="empty-icon">✓</span><strong>No alerts in this view</strong><span>Connect an API or switch to the alert queue.</span></div>
+        </section>
+      </section>
+
+      <section class="view" id="view-alerts" data-view-panel="alerts" hidden>
+        <div class="page-heading"><div><div class="eyebrow">TRIAGE <span class="eyebrow-line"></span></div><h1>Alert queue</h1><p class="page-subtitle">Review, filter, and investigate incoming security events.</p></div><div class="heading-meta"><span class="result-count" id="alertResultCount">0 alerts</span></div></div>
+        <section class="panel full-table-panel">
+          <div class="filters-row"><label class="search-field"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search alerts, source, or host…" autocomplete="off"></label><label class="select-label"><span class="sr-only">Filter by severity</span><select id="severityFilter"><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label><label class="select-label"><span class="sr-only">Filter by status</span><select id="statusFilter"><option value="all">All statuses</option><option value="new">New</option><option value="triaged">Triaged</option><option value="investigating">Investigating</option><option value="contained">Contained</option><option value="closed">Closed</option></select></label></div>
+          <div class="table-scroll"><table><thead><tr><th>ALERT</th><th>SOURCE</th><th>SEVERITY</th><th>STATUS</th><th>RECEIVED</th><th></th></tr></thead><tbody id="alertsBody"></tbody></table></div>
+          <div class="empty-state" id="alertsEmpty" hidden><span class="empty-icon">⌕</span><strong>No matching alerts</strong><span>Try changing the filters or search query.</span></div>
+          <div class="table-footnote" id="alertFootnote">Demo records are illustrative and not connected to an SIEM.</div>
+        </section>
+      </section>
+
+      <section class="view" id="view-cases" data-view-panel="cases" hidden>
+        <div class="page-heading"><div><div class="eyebrow">INVESTIGATIONS <span class="eyebrow-line"></span></div><h1>Case management</h1><p class="page-subtitle">Group related alerts and keep investigation context together.</p></div><span class="result-count" id="caseResultCount">0 cases</span></div>
+        <section class="panel full-table-panel"><div class="panel-heading case-heading"><div><h2>Recent cases</h2><p>Open investigations and completed work</p></div></div><div class="table-scroll"><table><thead><tr><th>CASE</th><th>TITLE</th><th>PRIORITY</th><th>STATUS</th><th>ALERTS</th><th>UPDATED</th></tr></thead><tbody id="casesBody"></tbody></table></div><div class="empty-state" id="casesEmpty" hidden><span class="empty-icon">▣</span><strong>No cases yet</strong><span>Create a case from an alert to start an investigation.</span></div><div class="table-footnote" id="caseFootnote">Demo case changes stay in this browser.</div></section>
+      </section>
+
+      <section class="view" id="view-integrations" data-view-panel="integrations" hidden>
+        <div class="page-heading"><div><div class="eyebrow">DATA SOURCES <span class="eyebrow-line"></span></div><h1>Integrations</h1><p class="page-subtitle">Connect the interface to a deployed Vigilante API or send events to your self-hosted instance.</p></div></div>
+        <div class="integration-grid">
+          <article class="panel integration-card"><div class="integration-icon icon-api">⇄</div><span class="integration-tag">AVAILABLE</span><h2>Vigilante API</h2><p>Sign in to your own API instance to load alerts, case counts, and investigations in this console.</p><button class="button button-primary button-small" data-open-connect>Configure connection</button></article>
+          <article class="panel integration-card"><div class="integration-icon icon-webhook">⌁</div><span class="integration-tag integration-tag-neutral">INGESTION</span><h2>Authenticated webhooks</h2><p>Post normalized security events to your backend. Keep webhook secrets on the server; never paste them into this static site.</p><pre><code>POST /api/v1/ingest/webhooks/{source}</code></pre></article>
+          <article class="panel integration-card"><div class="integration-icon icon-syslog">≋</div><span class="integration-tag integration-tag-neutral">PARSER TEST</span><h2>Syslog parser</h2><p>Test RFC3164-like messages through the authenticated parser endpoint exposed by your API.</p><pre><code>POST /api/v1/ingest/syslog/test</code></pre></article>
+        </div>
+        <div class="callout"><span class="callout-icon">i</span><div><strong>GitHub Pages hosts the console only.</strong><p>The API, database, webhook ingestion, and authentication must run on a separate server. Use HTTPS and add this Pages origin to <code>CORS_ORIGINS</code> before connecting.</p></div></div>
+      </section>
+
+      <footer class="app-footer"><span>VIGILANTE COMMUNITY EDITION</span><span>Open source · Self-hostable · Analyst-led</span></footer>
+    </main>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="detail-drawer" id="detailDrawer" aria-label="Alert details" aria-hidden="true">
+    <div class="drawer-header"><div><span class="eyebrow">ALERT DETAILS</span><h2 id="drawerTitle">Alert</h2></div><button class="icon-button" id="closeDrawer" aria-label="Close alert details">×</button></div>
+    <div id="drawerContent"></div>
+  </aside>
+
+  <div class="modal-backdrop" id="connectModal" hidden>
+    <section class="connect-modal" role="dialog" aria-modal="true" aria-labelledby="connectTitle">
+      <div class="modal-top"><div class="modal-icon">⇄</div><button class="icon-button" id="closeConnect" aria-label="Close connection dialog">×</button></div>
+      <h2 id="connectTitle">Connect your Vigilante API</h2>
+      <p class="modal-copy">Authenticate to your own HTTPS API. Credentials are sent to that endpoint; the access token stays in memory and is not saved by this page.</p>
+      <form id="connectForm">
+        <label for="apiBaseUrl">API base URL</label><input id="apiBaseUrl" name="apiBaseUrl" type="url" placeholder="https://soc-api.example.com" required autocomplete="url">
+        <div class="form-grid"><div><label for="apiUsername">Username</label><input id="apiUsername" name="username" type="text" required autocomplete="username"></div><div><label for="apiPassword">Password</label><input id="apiPassword" name="password" type="password" required autocomplete="current-password"></div></div>
+        <p class="form-note">The API must allow this website’s origin in <code>CORS_ORIGINS</code>. Never enter credentials on a page you do not trust.</p>
+        <div class="modal-error" id="connectError" role="alert" hidden></div>
+        <div class="modal-actions"><button type="button" class="button button-quiet" id="cancelConnect">Cancel</button><button type="submit" class="button button-primary" id="submitConnect">Connect securely</button></div>
+      </form>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
