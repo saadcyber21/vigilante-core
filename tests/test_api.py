@@ -1,10 +1,17 @@
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
+
+@pytest.fixture(scope="module")
+def client():
+    # Entering TestClient runs the app lifespan, which creates the test schema
+    # and configured development administrator before requests are sent.
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def auth():
+def auth(client):
     response = client.post("/api/v1/auth/login", json={
         "username": "admin",
         "password": "test-password",
@@ -13,12 +20,21 @@ def auth():
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def test_login_and_health():
+def test_dashboard_and_static_assets(client):
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "Command center" in page.text
+    assert "DEMO DATA" in page.text
+    assert client.get("/static/styles.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
+
+
+def test_login_and_health(client):
     assert client.get("/api/v1/health/live").json()["status"] == "alive"
-    assert auth()["Authorization"].startswith("Bearer ")
+    assert auth(client)["Authorization"].startswith("Bearer ")
 
 
-def test_webhook_is_idempotent():
+def test_webhook_is_idempotent(client):
     payload = {
         "event_type": "authentication",
         "message": "multiple failed login attempts followed by privilege escalation",
@@ -42,8 +58,8 @@ def test_webhook_is_idempotent():
     assert second.json()["accepted"] is False
 
 
-def test_alert_case_and_dashboard():
-    headers = auth()
+def test_alert_case_and_dashboard(client):
+    headers = auth(client)
     alert = client.post(
         "/api/v1/alerts",
         headers=headers,
@@ -66,6 +82,7 @@ def test_alert_case_and_dashboard():
         },
     )
     assert case.status_code == 200
+    assert case.json()["case_number"] >= 1
     assert alert_id in case.json()["alert_ids"]
 
     summary = client.get("/api/v1/dashboard/summary", headers=headers)

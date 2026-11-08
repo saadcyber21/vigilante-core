@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -38,6 +40,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+app.mount("/static", StaticFiles(directory=ROOT_DIR / "docs" / "static"), name="static")
 
 
 class LoginRequest(BaseModel):
@@ -270,7 +275,9 @@ def override_severity(alert_id: str, severity: str, reason: str, db: Session = D
 def create_case(body: CaseCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
     if body.priority not in ("low", "medium", "high", "critical"):
         raise HTTPException(status_code=422, detail="Invalid priority")
+    next_case_number = (db.scalar(select(func.max(Case.case_number))) or 0) + 1
     case = Case(
+        case_number=next_case_number,
         title=body.title,
         description=body.description,
         priority=body.priority,
@@ -360,28 +367,6 @@ def audit_events(db: Session = Depends(get_db), _: User = Depends(require_roles(
     } for e in events]
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def dashboard():
-    return """
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Vigilante AI</title>
-<style>
-body{font-family:system-ui;background:#0f172a;color:#e2e8f0;margin:0;padding:2rem}
-main{max-width:1100px;margin:auto}button{background:#2563eb;color:white;border:0;border-radius:5px;padding:.6rem 1rem;cursor:pointer}
-input{padding:.6rem;margin:.25rem;background:#1e293b;color:white;border:1px solid #475569;border-radius:4px}
-.card{background:#1e293b;padding:1rem;border-radius:8px;margin:1rem 0}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
-table{width:100%;border-collapse:collapse}td,th{padding:.6rem;border-bottom:1px solid #475569;text-align:left}
-.low{color:#86efac}.medium{color:#fde047}.high{color:#fb923c}.critical{color:#f87171}
-</style></head>
-<body><main><h1>Vigilante AI</h1>
-<section class="card"><input id="user" value="admin"><input id="pass" type="password" value="change-me"><button onclick="login()">Login</button><span id="auth"></span></section>
-<section class="grid" id="summary"></section>
-<section class="card"><h2>Alert queue</h2><table><thead><tr><th>Severity</th><th>Summary</th><th>Source</th><th>Received</th></tr></thead><tbody id="alerts"></tbody></table></section>
-<script>
-let token="";
-async function login(){let r=await fetch("/api/v1/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user.value,password:pass.value})});let x=await r.json();if(r.ok){token=x.access_token;auth.textContent=" authenticated";load()}else auth.textContent=x.detail}
-async function api(path){return (await fetch(path,{headers:{Authorization:"Bearer "+token}})).json()}
-async function load(){let s=await api("/api/v1/dashboard/summary");summary.innerHTML=Object.entries(s).filter(([k])=>k!="alerts_by_severity").map(([k,v])=>`<div class=card><b>${k}</b><h2>${v}</h2></div>`).join("");let a=await api("/api/v1/alerts");alerts.innerHTML=a.items.map(x=>`<tr><td class=${x.ai_severity}>${x.ai_severity}</td><td>${x.ai_summary||""}</td><td>${x.source_key}</td><td>${new Date(x.received_at).toLocaleString()}</td></tr>`).join("")}
-</script></main></body></html>
-"""
+    return FileResponse(ROOT_DIR / "docs" / "index.html")
