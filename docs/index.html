@@ -29,6 +29,7 @@
         <button class="nav-item active" data-view="overview"><span class="nav-icon" aria-hidden="true">◫</span><span>Overview</span></button>
         <button class="nav-item" data-view="alerts"><span class="nav-icon" aria-hidden="true">⌁</span><span>Alert queue</span><span class="nav-count" id="navAlertCount">0</span></button>
         <button class="nav-item" data-view="cases"><span class="nav-icon" aria-hidden="true">▣</span><span>Cases</span><span class="nav-count" id="navCaseCount">0</span></button>
+        <button class="nav-item" data-view="approvals"><span class="nav-icon" aria-hidden="true">✓</span><span>Response approvals</span><span class="nav-count" id="navProposalCount">0</span></button>
         <p class="nav-label nav-label-spaced">OPERATE</p>
         <button class="nav-item" data-view="integrations"><span class="nav-icon" aria-hidden="true">⌘</span><span>Integrations</span></button>
       </nav>
@@ -112,6 +113,15 @@
         <section class="panel full-table-panel"><div class="panel-heading case-heading"><div><h2>Recent cases</h2><p>Open investigations and completed work</p></div></div><div class="table-scroll"><table><thead><tr><th>CASE</th><th>TITLE</th><th>PRIORITY</th><th>STATUS</th><th>ALERTS</th><th>UPDATED</th></tr></thead><tbody id="casesBody"></tbody></table></div><div class="empty-state" id="casesEmpty" hidden><span class="empty-icon">▣</span><strong>No cases yet</strong><span>Create a case from an alert to start an investigation.</span></div><div class="table-footnote" id="caseFootnote">Demo case changes stay in this browser.</div></section>
       </section>
 
+      <section class="view" id="view-approvals" data-view-panel="approvals" hidden>
+        <div class="page-heading"><div><div class="eyebrow">HUMAN REVIEW <span class="eyebrow-line"></span></div><h1>Response approvals</h1><p class="page-subtitle">Second-person review for proposed defensive response steps.</p></div><span class="result-count" id="proposalResultCount">0 proposals</span></div>
+        <section class="panel full-table-panel">
+          <div class="table-scroll"><table><thead><tr><th>ACTION</th><th>ALERT</th><th>TARGET</th><th>RATIONALE</th><th>STATUS</th><th>REVIEW</th><th></th></tr></thead><tbody id="responseProposalsBody"></tbody></table></div>
+          <div class="empty-state" id="proposalsEmpty"><span class="empty-icon">✓</span><strong>No response proposals</strong><span>Connect a live API to review analyst-submitted proposals.</span></div>
+          <div class="table-footnote" id="proposalFootnote">Approval records a decision only. Vigilante does not execute commands or call response integrations.</div>
+        </section>
+      </section>
+
       <section class="view" id="view-integrations" data-view-panel="integrations" hidden>
         <div class="page-heading"><div><div class="eyebrow">DATA SOURCES <span class="eyebrow-line"></span></div><h1>Integrations</h1><p class="page-subtitle">Connect the interface to a deployed Vigilante API or send events to your self-hosted instance.</p></div></div>
         <div class="integration-grid">
@@ -119,7 +129,7 @@
           <article class="panel integration-card"><div class="integration-icon icon-webhook">⌁</div><span class="integration-tag integration-tag-neutral">INGESTION</span><h2>Authenticated webhooks</h2><p>Post normalized security events to your backend. Keep webhook secrets on the server; never paste them into this static site.</p><pre><code>POST /api/v1/ingest/webhooks/{source}</code></pre></article>
           <article class="panel integration-card"><div class="integration-icon icon-syslog">≋</div><span class="integration-tag integration-tag-neutral">PARSER TEST</span><h2>Syslog parser</h2><p>Test RFC3164-like messages through the authenticated parser endpoint exposed by your API.</p><pre><code>POST /api/v1/ingest/syslog/test</code></pre></article>
         </div>
-        <div class="callout"><span class="callout-icon">i</span><div><strong>GitHub Pages hosts the console only.</strong><p>The API, database, webhook ingestion, and authentication must run on a separate server. Use HTTPS and add this Pages origin to <code>CORS_ORIGINS</code> before connecting.</p></div></div>
+        <div class="callout"><span class="callout-icon">i</span><div><strong>GitHub Pages hosts the console only.</strong><p>The API, database, webhook ingestion, and authentication must run on a separate server. Each deployment is a single organization boundary; do not share one database between customers. Use HTTPS and add this Pages origin to <code>CORS_ORIGINS</code> before connecting.</p></div></div>
       </section>
 
       <footer class="app-footer"><span>VIGILANTE COMMUNITY EDITION</span><span>Open source · Self-hostable · Analyst-led</span></footer>
@@ -143,6 +153,35 @@
         <p class="form-note">The API must allow this website’s origin in <code>CORS_ORIGINS</code>. Never enter credentials on a page you do not trust.</p>
         <div class="modal-error" id="connectError" role="alert" hidden></div>
         <div class="modal-actions"><button type="button" class="button button-quiet" id="cancelConnect">Cancel</button><button type="submit" class="button button-primary" id="submitConnect">Connect securely</button></div>
+      </form>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="proposalModal" hidden>
+    <section class="connect-modal" role="dialog" aria-modal="true" aria-labelledby="proposalTitle">
+      <div class="modal-top"><div class="modal-icon">✓</div><button class="icon-button" id="closeProposal" aria-label="Close proposal dialog">×</button></div>
+      <h2 id="proposalTitle">Propose a defensive response</h2>
+      <p class="modal-copy">This creates a review record only. It will not isolate a host, disable an account, or contact an external system.</p>
+      <form id="proposalForm">
+        <input type="hidden" id="proposalAlertId">
+        <label for="proposalActionType">Proposed action</label><select id="proposalActionType" required><option value="isolate_host">Isolate host</option><option value="disable_account">Disable account</option><option value="revoke_credential">Revoke credential</option><option value="block_indicator">Block indicator</option><option value="escalate_incident">Escalate incident</option></select>
+        <label for="proposalTarget">Target reference</label><input id="proposalTarget" type="text" maxlength="250" required>
+        <label for="proposalRationale">Rationale</label><textarea id="proposalRationale" rows="4" minlength="8" maxlength="2000" required></textarea>
+        <p class="form-note">A different manager or security administrator must review this proposal.</p>
+        <div class="modal-error" id="proposalError" role="alert" hidden></div>
+        <div class="modal-actions"><button type="button" class="button button-quiet" id="cancelProposal">Cancel</button><button type="submit" class="button button-primary" id="submitProposal">Submit for review</button></div>
+      </form>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="reviewModal" hidden>
+    <section class="connect-modal" role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+      <div class="modal-top"><div class="modal-icon">✓</div><button class="icon-button" id="closeReview" aria-label="Close review dialog">×</button></div>
+      <h2 id="reviewTitle">Review response proposal</h2>
+      <p class="modal-copy" id="reviewCopy">Your decision is recorded for audit. This interface does not execute the proposed action.</p>
+      <form id="reviewForm">
+        <input type="hidden" id="reviewProposalId"><input type="hidden" id="reviewDecision">
+        <label for="reviewReason">Review note</label><textarea id="reviewReason" rows="4" minlength="3" maxlength="2000" required></textarea>
+        <div class="modal-error" id="reviewError" role="alert" hidden></div>
+        <div class="modal-actions"><button type="button" class="button button-quiet" id="cancelReview">Cancel</button><button type="submit" class="button button-primary" id="submitReview">Submit decision</button></div>
       </form>
     </section>
   </div>

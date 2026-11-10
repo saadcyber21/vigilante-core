@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vigilante-core"
-version = "0.1.0"
-description = "Self-hostable security operations platform"
+version = "0.2.0"
+description = "Defensive, self-hostable security operations foundation"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -13,7 +13,8 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "pydantic-settings>=2.6,<3",
   "python-multipart>=0.0.12,<1",
-  "httpx>=0.27,<1"
+  "httpx>=0.27,<1",
+  "psycopg[binary]>=3.2,<4"
 ]
 
 [project.optional-dependencies]

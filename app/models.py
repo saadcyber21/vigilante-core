@@ -63,6 +63,22 @@ class Case(Base):
     alerts: Mapped[list[Alert]] = relationship(back_populates="case")
 
 
+class ResponseProposal(Base):
+    __tablename__ = "response_proposals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    alert_id: Mapped[str] = mapped_column(ForeignKey("alerts.id"), index=True)
+    action_type: Mapped[str] = mapped_column(String(40))
+    target_reference: Mapped[str] = mapped_column(String(250))
+    rationale: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    proposed_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 

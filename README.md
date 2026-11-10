@@ -1,53 +1,72 @@
 # Vigilante Core
 
-Vigilante Core is an open-source, self-hostable security operations foundation. It pairs a small FastAPI backend with an analyst-focused web console for reviewing alerts and managing investigations.
+Vigilante Core is an open-source, defensive security operations MVP. It combines a static analyst console with a self-hosted FastAPI service and PostgreSQL database. The hosted website is a demo until you deploy and connect your own API.
 
-## What’s included
+## Product today
 
-- Authenticated webhook ingestion with idempotency and payload-size limits
-- Deterministic baseline triage and severity scoring (rules-based, not an ML model)
-- Alert review, severity overrides, case management, and audit events through the API
-- Responsive SOC console with alert search and filters, severity overview, alert details, and case creation
-- Synthetic demo workspace for trying the interface without a backend or real telemetry
-- GitHub Pages deployment for the static console; Docker Compose deployment for the API and database
+- **Alert ingestion:** authenticated source webhooks, payload size limits, idempotency, deterministic baseline severity scoring, and evidence summaries.
+- **Triage:** searchable/filterable alerts; analysts can record status changes with a reason.
+- **Cases:** create cases from alerts and update case status.
+- **Accounts:** initial administrator provisioning and administrator-managed analyst, manager, auditor, and security-admin accounts.
+- **Audit:** successful and failed sign-ins, alert and case changes, and response-proposal decisions are recorded.
+- **Response workflow:** analysts can propose a bounded defensive action; a different manager or security administrator can approve or reject it. Approval records a decision only—Vigilante does not execute commands or call response integrations.
+- **Deployment:** Docker Compose runs the API and PostgreSQL. The console can be served by the API or hosted separately on GitHub Pages.
 
-> **Demo and operational scope:** the dashboard opens with clearly labeled synthetic examples. GitHub Pages hosts only the static UI; it does not run the API, ingest telemetry, or store alert data. The bundled triage is a deterministic reference implementation and is not a substitute for validated detections, analyst review, or an incident-response program.
+Triage is a deterministic reference ruleset, not an AI/ML model. This is a single-deployment MVP, not a multi-tenant SaaS service or an enterprise SIEM replacement. It does not autonomously hunt, attack, contain, disable accounts, or generate bug-bounty revenue. Review detections and actions with qualified staff before operational use.
 
-## Try the hosted console
+## Hosted console
 
-The Pages workflow publishes the static interface at:
+**https://vigilante-core.github.io/**
 
-**https://saadcyber21.github.io/vigilante-core/**
+The console starts in synthetic demo mode; it does not connect to live data by itself. To use real alerts and cases, deploy the backend below, expose it through HTTPS, configure its `CORS_ORIGINS` to include `https://vigilante-core.github.io`, then select **Connect API** and sign in with an API account. The access token is kept in browser memory only. Never put passwords, JWT keys, or webhook secrets in the static Pages repository.
 
-The console starts in demo mode. To connect it to a self-hosted API, deploy the backend separately, expose it over HTTPS, and set `CORS_ORIGINS=https://saadcyber21.github.io` on the API server. In the console, choose **Connect API** and enter the API URL and an existing analyst account. The page keeps the access token in memory only; never put API keys or webhook secrets in the static site.
+## Run the self-hosted MVP
 
-## Run locally
+Requirements: Docker Engine and the Docker Compose plugin.
 
-Python 3.12 or newer is required.
+```bash
+git clone https://github.com/saadcyber21/vigilante-core.git
+cd vigilante-core
+cp .env.example .env
+```
+
+Edit `.env` and replace the example values for `POSTGRES_PASSWORD`, `JWT_SECRET`, `ADMIN_PASSWORD`, and `WEBHOOK_SECRET` with unique random secrets. For example, generate random values locally with `openssl rand -hex 32`; keep the output private and do not commit `.env`. Use a strong administrator password of at least 16 characters. Set `CORS_ORIGINS` to the exact console origin you use, and set a unique `TENANT_ID` for this deployment.
+
+Start the stack:
+
+```bash
+docker compose up -d --build
+docker compose ps
+curl http://127.0.0.1:8000/api/v1/health/ready
+```
+
+The API listens on `127.0.0.1:8000` by default. Put a TLS reverse proxy in front of it before connecting from a browser or exposing it beyond the host. The first start creates the administrator named by `ADMIN_USERNAME` and `ADMIN_PASSWORD`. The interactive API reference is at `https://your-api-host/docs` when deployed behind HTTPS.
+
+For local development without Docker:
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
 pip install -e '.[test]'
-cp .env.example .env
-# Change ADMIN_PASSWORD, JWT_SECRET, and WEBHOOK_SECRET in .env.
 uvicorn app.main:app --reload
 ```
 
-Open <http://localhost:8000>. The same console is served from the FastAPI app; the default display is synthetic demo data. To connect to the local API, enter `http://localhost:8000` in the connection dialog.
+The development server uses a local SQLite file by default and serves the same console at <http://localhost:8000>. Do not use development defaults for a production deployment.
 
-The development administrator is configured through `ADMIN_USERNAME` and `ADMIN_PASSWORD`. Replace both values before deployment.
+## Send a test event
 
-## Webhook ingestion
+Once the API is running, replace the webhook secret below with the configured secret and send a normalized event:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/ingest/webhooks/identity \
+curl -X POST http://127.0.0.1:8000/api/v1/ingest/webhooks/identity \
   -H 'Content-Type: application/json' \
-  -H 'X-Webhook-Secret: replace-with-a-source-specific-secret' \
+  -H 'X-Webhook-Secret: replace-with-your-source-secret' \
   -d '{"payload":{"event_type":"authentication","message":"multiple failed login attempts"},"idempotency_key":"event-001"}'
 ```
 
-## Tests
+For separate per-source credentials, configure `WEBHOOK_SOURCE_SECRETS` as a JSON object; when present, only listed source keys are accepted. Never include a webhook secret in frontend JavaScript.
+
+## Verify changes
 
 ```bash
 pip install -e '.[test]'
@@ -55,9 +74,14 @@ pytest
 node --check docs/static/app.js
 ```
 
-## Deployment
+CI runs the backend tests and checks dashboard JavaScript syntax. Docker is not required to run the Python tests.
 
-- **Static console:** GitHub Actions deploys `docs/` to GitHub Pages on pushes to `main` that change the dashboard or Pages workflow. See [DEPLOYMENT.md](DEPLOYMENT.md).
-- **API and database:** use Docker Compose on a secured Linux host behind TLS. GitHub Pages is not a backend host.
+## Important MVP boundaries
 
-For production, configure PostgreSQL through `DATABASE_URL`, place the API behind TLS, use a high-entropy `JWT_SECRET`, replace the development webhook secret, and review role and tenant isolation for your deployment. Raw payloads are stored as JSON in this compact reference implementation; production deployments should move immutable raw evidence to access-controlled object storage as specified by the architecture.
+- One API deployment is one organization boundary. Do not put multiple customers into one shared database; `TENANT_ID` is a deployment setting, not SaaS-grade tenant isolation.
+- TLS, host firewalls, backups, monitoring, and secret rotation are the operator’s responsibility.
+- Existing legacy SQLite data is not automatically migrated to PostgreSQL. Back up and plan any migration before upgrading an existing deployment.
+- The application currently uses SQLAlchemy table creation, not a production migration framework. Back up before upgrades and review schema changes.
+- The service is not independently security-certified, high-availability, or a replacement for a staffed incident-response program.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for TLS, backup, and operational instructions, and [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.

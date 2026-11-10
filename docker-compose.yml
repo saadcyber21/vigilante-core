@@ -1,31 +1,69 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vigilante}
+      POSTGRES_USER: ${POSTGRES_USER:-vigilante}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    volumes:
+      - vigilante-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   vigilante:
     build:
       context: .
       dockerfile: Dockerfile
     image: vigilante-core:local
     restart: unless-stopped
+    init: true
     env_file:
       - .env
     environment:
-      DATABASE_URL: sqlite:////data/vigilante.db
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      TENANT_ID: ${TENANT_ID:-default}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vigilante}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-vigilante}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://vigilante-core.github.io}
     ports:
-      - "8000:8000"
-    volumes:
-      - vigilante-data:/data
+      - "127.0.0.1:${PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live')"
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"
         ]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
-  vigilante-data:
+  vigilante-postgres:

@@ -1,136 +1,103 @@
 # Deployment guide
 
-This guide describes a small Linux VPS deployment using Docker Compose and a
-reverse proxy that terminates HTTPS.
+This guide deploys the self-hosted Vigilante Core MVP on a Linux host using Docker Compose. The static console may be served by the API or opened from GitHub Pages; the API and database are always deployed separately.
 
 ## Requirements
 
-- A Linux host with Docker Engine and the Docker Compose plugin
-- A DNS name pointing to the host
-- Firewall access for SSH and the HTTPS port
-- A backup destination with sufficient capacity
+- Linux host with Docker Engine and Docker Compose plugin
+- DNS name pointing to the host
+- Firewall allowing SSH and HTTPS to a TLS reverse proxy
+- Off-host backup location
 
-The application persists its SQLite database in the `vigilante-data` Docker
-volume. The Compose configuration exposes the application on port `8000`;
-place a reverse proxy in front of it rather than exposing that port publicly.
-
-## Prepare the host
-
-Clone the repository and enter the project directory:
+## Prepare secrets and start
 
 ```bash
-git clone <repository-url> vigilante-core
+git clone https://github.com/saadcyber21/vigilante-core.git
 cd vigilante-core
 cp .env.example .env
 ```
 
-Edit `.env` before starting the service. At minimum, replace:
+Edit `.env` before startup. Replace `POSTGRES_PASSWORD`, `JWT_SECRET`, `ADMIN_PASSWORD`, and `WEBHOOK_SECRET` with unique secrets. Generate random secret material locally (for example, `openssl rand -hex 32`) and keep it private. Use an administrator password of at least 16 characters. Set a unique deployment `TENANT_ID` and the exact `CORS_ORIGINS` value for your console. Never commit `.env` or put API secrets in GitHub Pages.
 
-- `JWT_SECRET`
-- `ADMIN_PASSWORD`
-- `WEBHOOK_SECRET`
-- `CORS_ORIGINS`
-
-Use long, randomly generated values for secrets. Do not commit `.env`.
-
-## Start the application
+Start and check the services:
 
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs -f vigilante
-```
-
-Verify the local health endpoints:
-
-```bash
+docker compose logs --tail=100 vigilante
 curl http://127.0.0.1:8000/api/v1/health/live
 curl http://127.0.0.1:8000/api/v1/health/ready
 ```
 
-The first application start creates the administrator configured by
-`ADMIN_USERNAME` and `ADMIN_PASSWORD`.
+The API is bound to localhost on port 8000 by default. PostgreSQL is not published to the host. The first application start provisions the configured administrator. The interactive API reference is available at `/docs` after deployment.
 
 ## HTTPS reverse proxy
 
-Configure the reverse proxy for the public hostname and forward requests to:
+Configure your reverse proxy to terminate TLS and forward requests to `http://127.0.0.1:8000`. Pass the `Authorization`, `Content-Type`, and `X-Webhook-Secret` headers. Redirect HTTP to HTTPS after certificate issuance. Expose only the reverse proxy’s HTTPS listener publicly; do not expose the API or PostgreSQL ports directly.
 
-```text
-http://127.0.0.1:8000
+For the hosted console at `https://vigilante-core.github.io/`, set:
+
+```dotenv
+CORS_ORIGINS=https://vigilante-core.github.io
 ```
 
-The proxy must support normal HTTP methods and pass the `Authorization` and
-`X-Webhook-Secret` headers. Configure an HTTPS certificate with your proxy's
-certificate automation. Redirect HTTP to HTTPS after certificate issuance.
+CORS accepts origins, not paths. If you serve the UI from your own API host, use that origin instead. After the API is reachable over HTTPS, open the hosted console and select **Connect API**. The static site has no access to API credentials until a user submits the login form; its short-lived bearer token is kept in memory only.
 
-Only expose the reverse proxy's HTTPS listener to the Internet. Restrict or
-remove public access to port `8000` after confirming proxy connectivity.
+## Webhook ingestion
 
-## Configuration
+Send normalized JSON events to `/api/v1/ingest/webhooks/{source_key}` and include the configured `X-Webhook-Secret`. Use an idempotency key supplied by the source when available. Prefer unique credentials per integration by configuring `WEBHOOK_SOURCE_SECRETS` with a JSON object, for example:
 
-The application reads environment variables from `.env`. Important values
-include:
+```dotenv
+WEBHOOK_SOURCE_SECRETS={"identity":"<random-secret>","endpoint":"<different-random-secret>"}
+```
+
+When this mapping is present, only listed source keys are accepted. Secrets belong in the backend environment, not client-side code or webhook URLs.
+
+## Configuration reference
 
 | Variable | Purpose |
 | --- | --- |
-| `APP_NAME` | Application title |
-| `ENVIRONMENT` | Runtime environment label |
-| `DATABASE_URL` | Database connection URL |
-| `JWT_SECRET` | HMAC signing secret for access tokens |
-| `JWT_EXPIRE_MINUTES` | Access-token lifetime |
-| `ADMIN_USERNAME` | Initial administrator username |
-| `ADMIN_PASSWORD` | Initial administrator password |
-| `WEBHOOK_SECRET` | Secret used for webhook authentication |
-| `MAX_PAYLOAD_BYTES` | Maximum accepted webhook payload size |
-| `CORS_ORIGINS` | Comma-separated allowed browser origins |
-| `LLM_ENABLED` | LLM configuration flag |
-| `LLM_PROVIDER` | LLM provider label |
-| `LLM_BASE_URL` | Optional LLM base URL |
-| `LLM_API_KEY` | Optional LLM API key |
-| `LLM_MODEL` | Optional LLM model name |
+| `APP_NAME` | Display name for the service |
+| `ENVIRONMENT` | Use `production` for deployment-time secret validation |
+| `TENANT_ID` | Fixed organization/deployment identifier; clients cannot choose it |
+| `DATABASE_URL` | Internal SQLAlchemy URL; Compose constructs a PostgreSQL URL |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | PostgreSQL database and login |
+| `JWT_SECRET` | HMAC signing secret for API access tokens |
+| `JWT_EXPIRE_MINUTES` | Token lifetime, 5–1440 minutes |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Initial administrator created at first startup |
+| `WEBHOOK_SECRET` | Shared fallback webhook credential |
+| `WEBHOOK_SOURCE_SECRETS` | Optional JSON mapping of per-source webhook credentials |
+| `MAX_PAYLOAD_BYTES` | Maximum accepted normalized payload size |
+| `CORS_ORIGINS` | Comma-separated exact browser origins |
+| `PORT` | Host-local API port, default 8000 |
+| `LLM_ENABLED` | Currently disabled; baseline triage is deterministic rules, not an LLM |
 
-The included Compose file overrides `DATABASE_URL` to store the SQLite database
-at `/data/vigilante.db` inside the named volume.
+The production settings validator refuses short or obvious placeholder secrets. It is a useful guardrail, not a secrets manager.
 
-## Persistent storage
+## Persistent data and backups
 
-The `vigilante-data` volume contains the application database. Inspect the
-volume with:
+PostgreSQL data is stored in the named `vigilante-postgres` Docker volume. `docker compose down` keeps this volume; `docker compose down -v` deletes it. Do not use `-v` unless intentional destruction of all database contents is desired.
 
-```bash
-docker volume inspect vigilante-core_vigilante-data
-```
-
-Do not delete the volume when recreating containers. `docker compose down`
-does not remove named volumes unless `-v` is supplied; do not use `-v` unless
-you intend to remove the database.
-
-For larger deployments, configure a PostgreSQL connection through
-`DATABASE_URL`. The generated dependency set does not include a PostgreSQL
-driver, so install a suitable driver in the image before using a PostgreSQL URL.
-
-## Backups
-
-Stop writes or briefly stop the application before copying the SQLite database
-to ensure a consistent file-level backup:
+Create an encrypted, off-host logical backup:
 
 ```bash
 mkdir -p backups
-docker compose stop vigilante
-docker run --rm \
-  -v vigilante-core_vigilante-data:/data:ro \
-  -v "$PWD/backups:/backup" \
-  alpine \
-  cp /data/vigilante.db /backup/vigilante-$(date -u +%Y%m%dT%H%M%SZ).db
-docker compose start vigilante
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  > "backups/vigilante-$(date -u +%Y%m%dT%H%M%SZ).sql"
 ```
 
-Copy backups to storage outside the VPS and periodically test restoration.
-Retain multiple dated copies and protect them as sensitive security data.
+Protect backup files as sensitive security data, copy them away from the server, retain multiple dated versions, and periodically test restoration. For example, restore into a stopped/test deployment with:
 
-## Updates
+```bash
+cat backups/vigilante-backup.sql | docker compose exec -T postgres \
+  sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
+```
 
-Pull the desired revision, rebuild, and recreate the service:
+For a restore, use a clean/test database and confirm the target before importing; do not overwrite valuable live data inadvertently.
+
+## Updates and schema changes
+
+Back up before every update. Pull the desired revision and rebuild:
 
 ```bash
 git pull
@@ -138,39 +105,20 @@ docker compose up -d --build
 docker compose logs --tail=100 vigilante
 ```
 
-Check both health endpoints and the dashboard after each update. Keep a backup
-before upgrades.
+Check both health endpoints, sign in, confirm the dashboard and alert/case lists, and verify that backups still work. The current MVP creates tables on startup and does not yet ship a schema migration framework. Review each release’s schema changes; older SQLite databases are not automatically migrated to PostgreSQL.
 
 ## Operational checks
-
-Useful commands:
 
 ```bash
 docker compose ps
 docker compose logs --tail=200 vigilante
+docker compose logs --tail=100 postgres
 docker stats
-curl https://your-hostname.example/api/v1/health/live
+curl https://your-api-host.example/api/v1/health/ready
 ```
 
-Review host disk usage, Docker volume usage, reverse-proxy certificate renewal,
-and backup freshness regularly.
+Monitor host disk, Docker volume use, reverse-proxy certificate renewal, failed logins, and backup freshness. Restrict administrator access, rotate secrets after exposure, and review audit events. This MVP does not provide high availability, outsourced monitoring, automatic threat-hunting, or automatic containment.
 
+## Scope and trust boundary
 
-## GitHub Pages console
-
-The static analyst console lives in `docs/` and is deployed by `.github/workflows/pages.yml`. The workflow publishes the UI from the `main` branch when dashboard files or the Pages workflow change. Once the Pages deployment finishes, the project site is available at:
-
-```text
-https://saadcyber21.github.io/vigilante-core/
-```
-
-Pages hosts only HTML, CSS, and JavaScript. It does not host the FastAPI service, database, webhook receiver, or persistent case storage. The console opens with clearly marked synthetic examples and does not contact a backend unless an analyst chooses **Connect API**.
-
-To connect the hosted console to a self-hosted API:
-
-1. Deploy the API separately using the Docker Compose instructions above and configure HTTPS.
-2. Set `CORS_ORIGINS=https://saadcyber21.github.io` on the API host, then restart the service. CORS uses the origin only; do not include `/vigilante-core/` in the origin value.
-3. Open the Pages console and choose **Connect API**. Enter the HTTPS base URL and an existing analyst account.
-4. Keep API credentials, JWT secrets, and webhook secrets out of `docs/`, Git history, and GitHub Pages settings. The console keeps its short-lived access token in memory only.
-
-For local development, the FastAPI app serves the same dashboard at `/` and its assets at `/static/`. The Pages deployment is independent from the API’s database and operational backups.
+GitHub Pages hosts only static HTML, CSS, and JavaScript. It does not host the API, database, authentication service, or webhook receiver. One backend installation is one organization boundary; do not share its database across unrelated customers. Response proposals and approvals are auditable records only, and no approved action is executed automatically. Validate all detections and response plans with qualified staff.
