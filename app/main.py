@@ -15,9 +15,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal, get_db, init_db
-from .models import Alert, AuditEvent, Case, ResponseProposal, User
+from .models import Alert, AuditEvent, Case, InvestigationRun, ResponseProposal, User
 from .security import current_user, hash_password, verify_password, create_token, require_roles
 from .triage import fingerprint, triage
+from .investigation import build_investigation
+from .middleware import RequestBodySizeLimitMiddleware
 
 settings = get_settings()
 
@@ -36,7 +38,8 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=settings.max_payload_bytes)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins,
@@ -116,6 +119,11 @@ class ResponseProposalCreate(StrictModel):
 class ResponseReview(StrictModel):
     decision: Literal["approve", "reject"]
     reason: str = Field(min_length=3, max_length=2_000)
+
+
+class InvestigationFeedback(StrictModel):
+    rating: int = Field(ge=1, le=5)
+    note: str = Field(default="", max_length=2_000)
 
 
 def audit(
@@ -404,6 +412,98 @@ def get_alert(alert_id: str, db: Session = Depends(get_db), _: User = Depends(cu
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
     return alert_dict(alert)
+
+
+@app.post("/api/v1/alerts/{alert_id}/investigation")
+def investigate_alert(
+    alert_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("analyst", "manager", "security_admin")),
+):
+    alert = db.scalar(select(Alert).where(Alert.id == alert_id, Alert.tenant_id == settings.tenant_id))
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if not settings.llm_enabled or not settings.llm_api_key or not settings.llm_model or not settings.llm_base_url:
+        raise HTTPException(status_code=503, detail="AI investigation is not configured. Set LLM_ENABLED=true, LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL on the API server.")
+    try:
+        brief = build_investigation(alert.payload, alert.ai_summary, alert.ai_severity,
+                                    settings.llm_base_url, settings.llm_api_key, settings.llm_model)
+    except RuntimeError as exc:
+        audit(db, user, "investigation.failed", "alert", alert.id, {"provider": settings.llm_provider})
+        db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    audit(db, user, "investigation.generated", "alert", alert.id, {
+        "provider": settings.llm_provider, "model": settings.llm_model,
+        "confidence": brief["confidence"], "evidence_count": len(brief["evidence"]),
+    })
+    run = InvestigationRun(
+        tenant_id=settings.tenant_id,
+        alert_id=alert.id,
+        created_by=user.id,
+        provider=settings.llm_provider,
+        model=settings.llm_model,
+        result_json=brief,
+    )
+    db.add(run)
+    db.flush()
+    db.commit()
+    return {
+        "investigation_id": run.id,
+        "alert_id": alert.id,
+        "provider": settings.llm_provider,
+        "model": settings.llm_model,
+        "brief": brief,
+        "data_notice": "This alert's summary and payload were sent to the AI provider configured by this API operator. Treat the output as advisory; validate evidence before acting.",
+        "execution_status": "not_executed",
+    }
+
+
+@app.post("/api/v1/investigations/{investigation_id}/feedback")
+def submit_investigation_feedback(
+    investigation_id: str,
+    body: InvestigationFeedback,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("analyst", "manager", "security_admin")),
+):
+    run = db.scalar(select(InvestigationRun).where(
+        InvestigationRun.id == investigation_id,
+        InvestigationRun.tenant_id == settings.tenant_id,
+    ))
+    if not run:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    run.rating = body.rating
+    run.feedback_note = body.note.strip()
+    run.feedback_by = user.id
+    run.feedback_at = datetime.now(timezone.utc)
+    audit(db, user, "investigation.feedback_submitted", "investigation", run.id, {
+        "rating": body.rating,
+        "has_note": bool(run.feedback_note),
+    })
+    db.commit()
+    return {"investigation_id": run.id, "rating": run.rating, "feedback_recorded": True}
+
+
+@app.get("/api/v1/ai/quality")
+def ai_quality_metrics(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("auditor", "security_admin", "manager")),
+):
+    total = db.scalar(select(func.count(InvestigationRun.id)).where(InvestigationRun.tenant_id == settings.tenant_id)) or 0
+    rated = db.scalar(select(func.count(InvestigationRun.id)).where(
+        InvestigationRun.tenant_id == settings.tenant_id,
+        InvestigationRun.rating.is_not(None),
+    )) or 0
+    average = db.scalar(select(func.avg(InvestigationRun.rating)).where(
+        InvestigationRun.tenant_id == settings.tenant_id,
+        InvestigationRun.rating.is_not(None),
+    ))
+    return {
+        "investigation_runs": total,
+        "rated_runs": rated,
+        "average_rating": round(float(average), 2) if average is not None else None,
+        "rating_scale": "1=not useful, 5=useful",
+        "note": "Analyst feedback is an evaluation signal; it does not automatically train or update a model.",
+    }
 
 
 @app.post("/api/v1/alerts/{alert_id}/severity")

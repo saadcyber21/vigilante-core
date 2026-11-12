@@ -91,3 +91,20 @@ class AuditEvent(Base):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
+class InvestigationRun(Base):
+    __tablename__ = "investigation_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(120), index=True)
+    alert_id: Mapped[str] = mapped_column(ForeignKey("alerts.id"), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    provider: Mapped[str] = mapped_column(String(80))
+    model: Mapped[str] = mapped_column(String(160))
+    result_json: Mapped[dict] = mapped_column(JSON)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    feedback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

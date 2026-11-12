@@ -1,5 +1,6 @@
 from functools import lru_cache
 import re
+from urllib.parse import urlparse
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -66,6 +67,22 @@ class Settings(BaseSettings):
 
         if problems:
             raise ValueError("Unsafe production configuration: " + "; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def validate_ai_provider(self):
+        if not self.llm_enabled:
+            return self
+        if not self.llm_api_key or not self.llm_model or not self.llm_base_url:
+            raise ValueError("LLM_ENABLED requires LLM_API_KEY, LLM_MODEL, and LLM_BASE_URL")
+        if not self.llm_provider.strip() or self.llm_provider.strip().lower() == "disabled":
+            raise ValueError("Set LLM_PROVIDER to the configured provider name when AI is enabled")
+        parsed = urlparse(self.llm_base_url)
+        local_host = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        if parsed.scheme != "https" and not local_host:
+            raise ValueError("LLM_BASE_URL must use HTTPS except for a local development provider")
+        if not parsed.netloc:
+            raise ValueError("LLM_BASE_URL must be a valid absolute URL")
         return self
 
 

@@ -188,16 +188,85 @@ function openDrawer(alertId) {
   const severity = String(alert.ai_severity || "low").toLowerCase();
   const status = String(alert.status || "triaged").toLowerCase();
   $("#drawerTitle").textContent = alert.id || "Alert";
-  $("#drawerContent").innerHTML = `<div class="drawer-section"><p class="drawer-label">ASSESSMENT</p><div style="display:flex;gap:7px;margin-bottom:10px"><span class="severity-tag ${escapeHtml(severity)}">${escapeHtml(label(severity))}</span><span class="status-tag ${escapeHtml(status)}">${escapeHtml(label(status))}</span></div><div class="drawer-summary">${escapeHtml(alert.ai_summary || "No summary available.")}</div></div><div class="drawer-section drawer-meta"><div><span>Source</span><strong>${escapeHtml(label(alert.source_key))}</strong></div><div><span>Received</span><strong>${escapeHtml(new Date(alert.received_at || Date.now()).toLocaleString())}</strong></div><div><span>Confidence</span><strong>${alert.ai_confidence == null ? "Not supplied" : `${Math.round(Number(alert.ai_confidence) * 100)}%`}</strong></div><div><span>Case</span><strong>${escapeHtml(alert.case_id || "Not linked")}</strong></div></div><div class="drawer-section"><p class="drawer-label">EVENT PAYLOAD</p><pre class="payload-box">${escapeHtml(JSON.stringify(alert.payload || {}, null, 2))}</pre></div><div class="drawer-actions"><button class="button button-primary button-small" id="createCaseButton">Create case</button><button class="button button-quiet button-small" id="proposeResponseButton">Propose response</button><button class="button button-quiet button-small" id="closeDetailsButton">Close</button></div>`;
+  $("#drawerContent").innerHTML = `<div class="drawer-section"><p class="drawer-label">ASSESSMENT</p><div style="display:flex;gap:7px;margin-bottom:10px"><span class="severity-tag ${escapeHtml(severity)}">${escapeHtml(label(severity))}</span><span class="status-tag ${escapeHtml(status)}">${escapeHtml(label(status))}</span></div><div class="drawer-summary">${escapeHtml(alert.ai_summary || "No summary available.")}</div></div><div class="drawer-section drawer-meta"><div><span>Source</span><strong>${escapeHtml(label(alert.source_key))}</strong></div><div><span>Received</span><strong>${escapeHtml(new Date(alert.received_at || Date.now()).toLocaleString())}</strong></div><div><span>Baseline confidence</span><strong>${alert.ai_confidence == null ? "Not supplied" : `${Math.round(Number(alert.ai_confidence) * 100)}%`}</strong></div><div><span>Case</span><strong>${escapeHtml(alert.case_id || "Not linked")}</strong></div></div><div class="drawer-section"><p class="drawer-label">AI INVESTIGATION BRIEF</p><p class="form-note">On-demand, evidence-grounded analyst assistance. In live mode, this alert is sent to the AI provider configured by the API operator. Suggestions are advisory; no action is executed.</p><button class="button button-primary button-small" id="investigateAlertButton">${state.mode === "demo" ? "Preview sample brief" : "Generate investigation brief"}</button><div id="investigationResult" aria-live="polite"></div></div><div class="drawer-section"><p class="drawer-label">EVENT PAYLOAD</p><pre class="payload-box">${escapeHtml(JSON.stringify(alert.payload || {}, null, 2))}</pre></div><div class="drawer-actions"><button class="button button-primary button-small" id="createCaseButton">Create case</button><button class="button button-quiet button-small" id="proposeResponseButton">Propose response</button><button class="button button-quiet button-small" id="closeDetailsButton">Close</button></div>`;
   $("#drawerBackdrop").hidden = false;
   $("#detailDrawer").classList.add("open");
   $("#detailDrawer").setAttribute("aria-hidden", "false");
   $("#drawerContent").insertAdjacentHTML("beforeend", `<div class="drawer-section"><p class="drawer-label">TRIAGE STATUS</p><label class="drawer-field-label" for="alertStatusSelect">Status</label><select id="alertStatusSelect"><option value="new">New</option><option value="triaged">Triaged</option><option value="investigating">Investigating</option><option value="contained">Contained</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select><label class="drawer-field-label" for="alertStatusReason">Reason for change</label><input id="alertStatusReason" type="text" maxlength="2000" placeholder="Document the analyst decision"><button class="button button-quiet button-small drawer-status-save" id="saveAlertStatus">Save status</button></div>`);
   $("#alertStatusSelect").value = ["new", "triaged", "investigating", "contained", "resolved", "closed"].includes(status) ? status : "triaged";
   $("#saveAlertStatus").addEventListener("click", () => updateSelectedAlertStatus());
+  $("#investigateAlertButton").addEventListener("click", () => generateInvestigationBrief(alert));
   $("#createCaseButton").addEventListener("click", () => createCaseFromSelected());
   $("#proposeResponseButton").addEventListener("click", () => openProposalModal(alert.id));
   $("#closeDetailsButton").addEventListener("click", closeDrawer);
+}
+function renderInvestigationBrief(brief, notice, investigationId = null) {
+  const result = $("#investigationResult");
+  if (!result) return;
+  result.innerHTML = `<div class="drawer-summary investigation-assessment">${escapeHtml(brief.assessment)}</div><p class="drawer-label">CONFIDENCE: ${escapeHtml(label(brief.confidence))}</p><p class="drawer-label">EVIDENCE</p><ul class="investigation-list">${(brief.evidence || []).map((item) => `<li><strong>${escapeHtml(item.field)} = ${escapeHtml(item.observed)}</strong><span>${escapeHtml(item.interpretation)}</span></li>`).join("") || "<li>No evidence items returned.</li>"}</ul><p class="drawer-label">HYPOTHESES</p><ul class="investigation-list">${(brief.hypotheses || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None returned.</li>"}</ul><p class="drawer-label">SAFE NEXT STEPS</p><ul class="investigation-list">${(brief.next_steps || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None returned.</li>"}</ul><p class="drawer-label">LIMITATIONS</p><ul class="investigation-list">${(brief.limitations || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>None returned.</li>"}</ul><p class="form-note">${escapeHtml(notice)}</p>${investigationId ? `<div class="investigation-feedback"><p class="drawer-label">WAS THIS USEFUL?</p><label class="sr-only" for="investigationFeedbackNote">Optional feedback note</label><input id="investigationFeedbackNote" type="text" maxlength="2000" placeholder="Optional: what was missing or helpful?"><div><button class="row-action" data-feedback-rating="5" data-investigation-id="${escapeHtml(investigationId)}">Useful</button> <button class="row-action" data-feedback-rating="1" data-investigation-id="${escapeHtml(investigationId)}">Needs work</button></div></div>` : ""}`;
+  result.querySelectorAll("[data-feedback-rating]").forEach((button) => button.addEventListener("click", () => submitInvestigationFeedback(button.dataset.investigationId, Number(button.dataset.feedbackRating), button)));
+}
+async function generateInvestigationBrief(alert) {
+  const button = $("#investigateAlertButton");
+  button.disabled = true;
+  button.textContent = state.mode === "demo" ? "Sample only" : "Investigating…";
+  if (state.mode === "demo") {
+    renderInvestigationBrief({
+      assessment: "Sample layout only: the demo does not call an AI model or analyze live telemetry. Configure an AI provider on your self-hosted API to generate a real brief.",
+      confidence: "low",
+      evidence: [{ field: "demo", observed: "synthetic event", interpretation: "This record is sample data and cannot establish a real threat." }],
+      hypotheses: ["No operational conclusion can be drawn from this synthetic sample."],
+      next_steps: ["Connect a deployed Vigilante API with AI investigation configured.", "Validate any generated evidence against source telemetry."],
+      limitations: ["No model call was made."]
+    }, "Sample only — not AI-generated.");
+    button.disabled = false;
+    button.textContent = "Preview sample brief";
+    return;
+  }
+  try {
+    const response = await apiRequest(`/api/v1/alerts/${encodeURIComponent(alert.id)}/investigation`, { method: "POST" });
+    renderInvestigationBrief(response.brief, `${response.data_notice} Provider: ${response.provider}; model: ${response.model}.`, response.investigation_id);
+  } catch (error) {
+    const result = $("#investigationResult");
+    if (result) result.innerHTML = `<p class="form-note">${escapeHtml(error.message)}</p>`;
+  } finally {
+    if (button.isConnected) {
+      button.disabled = false;
+      button.textContent = "Generate investigation brief";
+    }
+  }
+}
+async function submitInvestigationFeedback(investigationId, rating, button) {
+  button.disabled = true;
+  try {
+    await apiRequest(`/api/v1/investigations/${encodeURIComponent(investigationId)}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating, note: $("#investigationFeedbackNote").value.trim() })
+    });
+    button.closest(".investigation-feedback").innerHTML = "<p class=\"form-note\">Feedback recorded for evaluation. It does not train or change the AI model.</p>";
+  } catch (error) {
+    button.disabled = false;
+    toast(`Could not record feedback: ${error.message}`);
+  }
+}
+async function loadAiQualityMetrics() {
+  const result = $("#aiQualityResult");
+  const button = $("#loadAiQuality");
+  if (state.mode !== "live") {
+    result.textContent = "Connect a live API to view recorded evaluation metrics.";
+    return;
+  }
+  button.disabled = true;
+  result.textContent = "Loading metrics…";
+  try {
+    const metrics = await apiRequest("/api/v1/ai/quality");
+    result.textContent = `${metrics.investigation_runs} investigation runs · ${metrics.rated_runs} rated · ${metrics.average_rating == null ? "No ratings yet" : `${metrics.average_rating}/5 average`}. Ratings are feedback, not an accuracy benchmark.`;
+  } catch (error) {
+    result.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 function closeDrawer() {
   $("#detailDrawer").classList.remove("open");
@@ -446,6 +515,7 @@ $("#connectButton").addEventListener("click", () => {
   } else openConnect();
 });
 $("#connectForm").addEventListener("submit", connectApi);
+$("#loadAiQuality").addEventListener("click", loadAiQualityMetrics);
 $("#proposalForm").addEventListener("submit", submitProposal);
 $("#reviewForm").addEventListener("submit", submitReview);
 $("#closeConnect").addEventListener("click", closeConnect);

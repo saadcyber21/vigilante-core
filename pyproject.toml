@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vigilante-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Defensive, self-hostable security operations foundation"
 requires-python = ">=3.12"
 dependencies = [
